@@ -1,5 +1,5 @@
 #imports --------------------------------------------------------------------- #
-import pygame, sys, json, math, time, base64, random, tkinter, threading
+import pygame, sys, json, math, time, base64
 from pygame.locals import *
 from lib.Font import Font
 from lib.SpriteSheets import loadTextures, reverseTextures
@@ -30,63 +30,45 @@ class Button:
     def draw(self, surf):
         surf.blit(self.surface, self.rect)
 
-#grid toggle button, with different sizes
-class GridButton(Button):
-    def __init__(self, topLeft, size, color, font):
-        super().__init__(topLeft, size, color)
-        self.sizes = ['off','8x8','16x16','32x32']
-        self.surfaces = {}
-        for ele in self.sizes:
-            self.surfaces[ele] = pygame.Surface(size)
-            self.surfaces[ele].fill(color)
-            textSize = font.size(ele, scale=3)
-            font.render(self.surfaces[ele], ele, (self.width // 2 - textSize[0] // 2, 15), scale=3)
-        self.surface = self.surfaces['off']
-        self.index = 0
-
-    def cycleSize(self):
-        self.index += 1
-        self.index %= len(self.sizes)
-        self.surface = self.surfaces[self.sizes[self.index]]
-
-    def getStatus(self):
-        return self.sizes[self.index]
-
-#map building tiles
-class MapTiles:
-    def __init__(self, coords, size):
-        self.x = coords[0]
-        self.y = coords[1]
-        self.rect = pygame.Rect(self.x, self.y, size, size)
-        self.surface = pygame.Surface((size, size))
-        self.surfID = None
-
-    def draw(self, surf):
-        pygame.draw.rect(surf, (74, 71, 67), self.rect, 1)
-
 #the tile area
 class TileArea(Screen):
     def __init__(self, topLeft, size, color, resolution):
         super().__init__(topLeft, size, color)
         self.background = pygame.Surface(resolution)
         self.background.fill(color)
-        self.surface = pygame.Surface(resolution)
-        self.surface.fill((0, 0, 1))
-        self.surface.set_colorkey((0, 0, 1))
-        self.gridSurface = self.surface.copy()
-        self.gridSurface.fill((0, 0, 0))
-        self.gridSurface.set_colorkey((0, 0, 0))
+        self.color = color
+        self.gridSurfaces = {'off':pygame.Surface(resolution), '8x8':pygame.Surface(resolution), '16x16':pygame.Surface(resolution), '32x32':pygame.Surface(resolution)}
+        for surf in self.gridSurfaces:
+            self.gridSurfaces[surf].set_colorkey((0, 0, 0))
+            if surf != 'off':
+                curSize = int(surf.split('x')[0])
+                for i in range(resolution[0] // curSize):
+                    pygame.draw.line(self.gridSurfaces[surf], (74, 71, 67), (curSize * i, 0), (curSize * i, resolution[1]), 1)
+                for i in range(resolution[1] // curSize):
+                    pygame.draw.line(self.gridSurfaces[surf], (74, 71, 67), (0, curSize * i), (resolution[0], curSize * i), 1)
+        self.gridSurface = self.gridSurfaces['off']
         self.width = resolution[0]
         self.height = resolution[1]
         self.xScale = size[0] / resolution[0]
         self.yScale = size[1] / resolution[1]
+        self.curSize = 1
 
-
-    def draw(self, surf):
+    def draw(self, surf, tiles):
+        self.background.fill(self.color)
+        for tile in tiles:
+            self.background.blit(tile.surface, tile.rect)
         surf.blit(pygame.transform.scale(self.background, self.rect.size), self.rect)
-        surf.blit(pygame.transform.scale(self.surface, self.rect.size), self.rect)
         surf.blit(pygame.transform.scale(self.gridSurface, self.rect.size), self.rect)
-        self.surface.fill((0, 0, 1))
+
+    def changeGrid(self, newSize):
+        self.gridSurface = self.gridSurfaces[newSize]
+        if newSize != 'off':
+            self.curSize = int(newSize.split('x')[0])
+        else:
+            self.curSize = 1
+
+    def getCurSize(self):
+        return self.curSize
 
 #side bar
 class Sidebar(Screen):
@@ -113,6 +95,28 @@ class Sidebar(Screen):
         font.render(self.surface, 'Options', (188 - font.size('Options', scale=3)[0] // 2, font.size('Options', scale=3)[1] // 2), scale=3)
         surf.blit(pygame.transform.scale(self.surface, self.rect.size), self.rect)
 
+#grid toggle button, with different sizes
+class GridButton(Button):
+    def __init__(self, topLeft, size, color, font):
+        super().__init__(topLeft, size, color)
+        self.sizes = ['off','8x8','16x16','32x32']
+        self.surfaces = {}
+        for ele in self.sizes:
+            self.surfaces[ele] = pygame.Surface(size)
+            self.surfaces[ele].fill(color)
+            textSize = font.size(ele, scale=3)
+            font.render(self.surfaces[ele], ele, (self.width // 2 - textSize[0] // 2, 15), scale=3)
+        self.surface = self.surfaces['off']
+        self.index = 0
+
+    def cycleSize(self):
+        self.index += 1
+        self.index %= len(self.sizes)
+        self.surface = self.surfaces[self.sizes[self.index]]
+
+    def getStatus(self):
+        return self.sizes[self.index]
+
 #save button
 class SaveButton(Button):
     def __init__(self, topLeft, size, color, font):
@@ -134,17 +138,54 @@ class LoadButton(Button):
         textSize = font.size('Load', scale=3)
         font.render(self.surface, 'Load', (self.width // 2 - textSize[0] // 2, 15), scale=3)
 
-#texture tile
+#texture tile in sidebar that shows the current loaded textures
 class TextureTile:
     def __init__(self, coords, surface):
         self.x = coords[0]
         self.y = coords[1]
-        self.size = (32, 32)
+        self.size = (surface.get_width()*2, surface.get_height()*2)
         self.rect = pygame.Rect((self.x, self.y), self.size)
+        self.textureRect = pygame.Rect((self.x, self.y), (surface.get_size()))
+        self.origSurface = pygame.Surface(surface.get_size())
+        self.origSurface.blit(surface, (0,0))
         self.surface = pygame.Surface(self.size)
         self.surface.blit(pygame.transform.scale(surface, self.size), (0,0))
 
     def draw(self, surf):
+        surf.blit(self.surface, self.rect)
+
+#current texture holding
+class CurrentTexture:
+    def __init__(self, surface):
+        self.rect = pygame.Rect((0, 0), surface.get_size())
+        self.surface = surface.copy()
+        self.colorkey = (0, 0, 0)
+        self.surface.set_colorkey(self.colorkey)
+
+    def draw(self, surf):
+        tempSurf = self.surface.copy()
+        self.surface.fill(self.colorkey)
+        self.surface.blit(tempSurf, (0, 0))
+        surf.blit(self.surface, self.rect)
+
+    def update(self, surf, mousepos):
+        self.rect.center = mousepos
+        self.draw(surf)
+
+#drawn tile to the screen
+class DrawnTile:
+    def __init__(self, coords, surface):
+        self.x = coords[0]
+        self.y = coords[1]
+        self.rect = pygame.Rect((self.x, self.y), surface.get_size())
+        self.surface = surface.copy()
+        self.colorkey = (0, 0, 0)
+        self.surface.set_colorkey(self.colorkey)
+
+    def draw(self, surf):
+        tempSurf = self.surface.copy()
+        self.surface.fill(self.colorkey)
+        self.surface.blit(tempSurf, (0, 0))
         surf.blit(self.surface, self.rect)
 
 #general functions ----------------------------------------------------------- #
@@ -168,7 +209,7 @@ def saveMap(currentTiles):
     [savedSurfaces.append(base64.b64encode(surf).decode('ascii')) for surf in uniqueSurfaces]
     #put all the tile objs into the data dict
     savedTiles = []
-    [savedTiles.append({'SurfID':tile.surfID, 'Coords':tile.rect.topleft, 'Size':tile.rect.w}) for tile in tiles]
+    [savedTiles.append({'SurfID':tile.surfID, 'Coords':tile.rect.topleft, 'Size':tile.rect.size}) for tile in tiles]
     #write to a json file in output
     data['Surfaces'] = savedSurfaces
     data['Tiles'] = savedTiles
@@ -183,9 +224,6 @@ def saveMap(currentTiles):
     with open(f'output/{timeStamp}.json','w+') as writeFile:
         json.dump(data, writeFile)
 
-    #this code is used to decode the surfaces
-    #testSurf = pygame.image.fromstring(base64.b64decode(data['Surface 0']), (8, 8), 'RGB')
-
 #load up a map to display on the screen
 def loadMap(path):
     global gui
@@ -194,16 +232,18 @@ def loadMap(path):
             data = json.load(readFile)
         tiles = []
         for tile in data['Tiles']:
-            tiles.append(MapTiles(tile['Coords'], tile['Size']))
-            tiles[-1].surfID = tile['SurfID']
-            print(tiles[-1].rect)
-        print('-'*50)
-        for tile in tiles:
-            tile.surface = pygame.image.fromstring(base64.b64decode(data['Surfaces'][tile.surfID]), tile.rect.size, 'RGB')
-            print(tile.rect)
+            surface = pygame.image.fromstring(base64.b64decode(data['Surfaces'][tile['SurfID']]), tile['Size'], 'RGB')
+            tiles.append(DrawnTile(tile['Coords'], surface.copy()))
         return tiles
     except Exception as e:
         print(e)
+
+#clean up tiles when there is more than one on the same exact spot
+def cleanUp(tiles, newTile):
+    for tile in tiles:
+        if tile.rect.topleft == newTile.rect.topleft and tile.rect.bottomright == newTile.rect.bottomright:
+            tiles.remove(tile)
+    tiles.append(newTile)
 
 #window init ----------------------------------------------------------------- #
 screen = pygame.display.set_mode(size=(1750, 1000))
@@ -237,7 +277,6 @@ tilearea = TileArea((250, 0), (1500, 1000), (37, 36, 34), (720, 480))
 xRatio = screen.get_width() / gui.get_width()
 yRatio = screen.get_height() / gui.get_height()
 currentTexture = None
-currentRect = None
 
 #load button used to load a map from a json
 loadButton = LoadButton((25, 140), (200, 50), (37, 36, 34), font)
@@ -273,72 +312,45 @@ while True:
 
     #update elements --------------------------------------------------------- #
     gui.fill((0, 0, 0))
-    for tile in placedTiles:
-        tilearea.surface.blit(tile.surface, tile.rect)
-    tilearea.draw(gui)
+    tilearea.draw(gui, placedTiles)
     sidebar.draw(gui)
     if textureMenu:
         #i can hold backspace an it'll start deleting everything after a certain period
-        if backspacing:
+        if backspacing and textureSearchPath != '':
             backspaceTimer += dt
             if backspaceTimer >= .20:
-                if len(textureSearchPath) > 0:
-                    textureSearchPath = textureSearchPath[:len(textureSearchPath)-1]
+                textureSearchPath = textureSearchPath[:len(textureSearchPath)-1]
         else:
             backspaceTimer = 0
         #gotta make sure that what is being put in the searchbar fits the searchbar
-        renderedSearch = ''
-        fit = False
-        for i in range(len(textureSearchPath)):
-            if not fit:
-                renderedSearch += textureSearchPath[i]
-                textureSearchPathSurfaceSize = font.size(renderedSearch, scale=2)
-                #check if the render is too long, make the render a substring from the back of the textureSearchPath
-                if textureSearchPathSurfaceSize[0] >= sidebar.searchBar.w - searchRenderOffset:
-                    fit = True
-                    renderedSearch = textureSearchPath[-len(renderedSearch):]
-                    #trims the newly created render to make sure it still fits
-                    textureSearchPathSurfaceSize = font.size(renderedSearch, scale=2)
-                    while textureSearchPathSurfaceSize[0] >= sidebar.searchBar.w - searchRenderOffset:
-                        renderedSearch = renderedSearch[-len(renderedSearch)+1:] #return the string without the first character
-                        textureSearchPathSurfaceSize = font.size(renderedSearch, scale=2)
+        renderedSearch = textureSearchPath
+        if renderedSearch != '':
+            while font.size(renderedSearch, scale=2)[0] >= sidebar.searchBar.w - searchRenderOffset:
+                renderedSearch = renderedSearch[-len(renderedSearch)+1:]
         #render the search on top of the searchbar, but render to gui since i already drew the sidebar
         font.render(gui, renderedSearch, (sidebar.searchBar.midleft[0] + searchRenderOffset, sidebar.searchBar.midleft[1] - 10), scale=2)
         for texture in loadedTextures:
             gui.blit(texture.surface, texture.rect)
     elif buttonMenu:
         #i can hold backspace an it'll start deleting everything after a certain period
-        if backspacing:
+        if backspacing and mapSearchPath != '':
             backspaceTimer += dt
             if backspaceTimer >= .20:
-                if len(mapSearchPath) > 0:
-                    mapSearchPath = mapSearchPath[:len(mapSearchPath)-1]
+                mapSearchPath = mapSearchPath[:len(mapSearchPath)-1]
         else:
             backspaceTimer = 0
         #gotta make sure that what is being put in the searchbar fits the searchbar
-        renderedSearch = ''
-        fit = False
-        for i in range(len(mapSearchPath)):
-            if not fit:
-                renderedSearch += mapSearchPath[i]
-                mapSearchPathSurfaceSize = font.size(renderedSearch, scale=2)
-                #check if the render is too long, make the render a substring from the back of the mapSearchPath
-                if mapSearchPathSurfaceSize[0] >= sidebar.searchBar.w - searchRenderOffset:
-                    fit = True
-                    renderedSearch = mapSearchPath[-len(renderedSearch):]
-                    #trims the newly created render to make sure it still fits
-                    mapSearchPathSurfaceSize = font.size(renderedSearch, scale=2)
-                    while mapSearchPathSurfaceSize[0] >= sidebar.searchBar.w - searchRenderOffset:
-                        renderedSearch = renderedSearch[-len(renderedSearch)+1:] #return the string without the first character
-                        mapSearchPathSurfaceSize = font.size(renderedSearch, scale=2)
+        renderedSearch = mapSearchPath
+        if renderedSearch != '':
+            while font.size(renderedSearch, scale=2)[0] >= sidebar.searchBar.w - searchRenderOffset:
+                renderedSearch = renderedSearch[-len(renderedSearch)+1:]
         font.render(gui, renderedSearch, (sidebar.searchBar.midleft[0] + searchRenderOffset, sidebar.searchBar.midleft[1] - 10), scale=2)
         sizeButton.draw(gui)
         saveButton.draw(gui)
         clearButton.draw(gui)
     loadButton.draw(gui)
     if currentTexture:
-        currentRect.center = pygame.mouse.get_pos()
-        gui.blit(currentTexture, currentRect)
+        currentTexture.update(gui, pygame.mouse.get_pos())
 
     #handle events ----------------------------------------------------------- #
     for event in pygame.event.get():
@@ -350,13 +362,10 @@ while True:
             mousepos = mx / xRatio, my / yRatio
             if event.button == 1:
                 #check if a tile was clicked and draw there
-                if tilearea.rect.collidepoint(mousepos):
+                if tilearea.rect.collidepoint(mousepos) and currentTexture:
                     mousepos = (mousepos[0] - tilearea.rect.x) / tilearea.xScale, mousepos[1] / tilearea.yScale
-                    for tile in tiles:
-                        if tile.rect.collidepoint(mousepos):
-                            if currentTexture:
-                                tile.surface.blit(pygame.transform.scale(currentTexture, tile.rect.size), (0,0))
-                                placedTiles.append(tile)
+                    newTile = DrawnTile(((mousepos[0] // tilearea.getCurSize()) * tilearea.getCurSize(), (mousepos[1] // tilearea.getCurSize()) * tilearea.getCurSize()), (currentTexture.surface))
+                    cleanUp(placedTiles, newTile)
                 elif sidebar.rect.collidepoint(mousepos):
                     if sidebar.tabRects[0].collidepoint(mousepos):
                         textureMenu = True
@@ -368,12 +377,13 @@ while True:
                         sidebar.selected = sidebar.tabs[1]
                         textureSearching = False
                     elif loadButton.rect.collidepoint(mousepos):
+                        mapSearching = False
+                        textureSearching = False
                         if buttonMenu:
                             loaded = (loadMap(mapSearchPath))
                             if loaded:
                                 placedTiles.extend(loaded)
                         else:
-                            print(textureSearchPath)
                             textures = loadTextures(textureSearchPath, colorkey=(0, 0, 0))
                             if textures:
                                 loadedTextures = []
@@ -385,37 +395,26 @@ while True:
                         else:
                             for texture in loadedTextures:
                                 if texture.rect.collidepoint(mousepos):
-                                    currentTexture = texture.surface.copy()
-                                    currentRect = texture.rect.copy()
+                                    currentTexture = CurrentTexture(texture.origSurface)
                     elif buttonMenu:
                         if sidebar.searchBar.collidepoint(mousepos):
                             mapSearching = True
                         elif sizeButton.rect.collidepoint(mousepos):
                             sizeButton.cycleSize()
                             gridStyle = sizeButton.getStatus()
-                            tilearea.gridSurface.fill((0, 0, 0))
-                            tiles = []
-                            if gridStyle != 'off':
-                                size = int(gridStyle.split('x')[0])
-                                xTiles = math.ceil(tilearea.width / size)
-                                yTiles = math.ceil(tilearea.height / size)
-                                for i in range(yTiles):
-                                    for j in range(xTiles):
-                                        tiles.append(MapTiles((j * size, i * size), size))
-                            for tile in tiles:
-                                tile.draw(tilearea.gridSurface)
+                            tilearea.changeGrid(gridStyle)
                         elif saveButton.rect.collidepoint(mousepos):
                             saveMap(placedTiles)
                         elif clearButton.rect.collidepoint(mousepos):
                             placedTiles = []
             elif event.button == 3:
                 currentTexture = None
-                currentRect = None
                 if tilearea.rect.collidepoint(mousepos):
                     mousepos = (mousepos[0] - tilearea.rect.x) / tilearea.xScale, mousepos[1] / tilearea.yScale
                     for tile in placedTiles:
                         if tile.rect.collidepoint(mousepos):
                             placedTiles.remove(tile)
+                            break
             elif event.button == 2:
                 if tilearea.rect.collidepoint(mousepos):
                     mousepos = (mousepos[0] - tilearea.rect.x) / tilearea.xScale, mousepos[1] / tilearea.yScale
@@ -426,15 +425,26 @@ while True:
         elif event.type == KEYDOWN:
             if event.key == K_RETURN:
                 textureSearching = False
+                mapSearching = False
+                if buttonMenu:
+                    loaded = (loadMap(mapSearchPath))
+                    if loaded:
+                        placedTiles.extend(loaded)
+                else:
+                    textures = loadTextures(textureSearchPath, colorkey=(0, 0, 0))
+                    if textures:
+                        loadedTextures = []
+                        for i in range(len(textures)):
+                            loadedTextures.append(TextureTile((20, 205 + 65 * i), textures[i]))
+            elif event.key == K_LSHIFT or event.key == K_RSHIFT:
+                shiftCaps = True
+            elif event.key == K_CAPSLOCK:
+                allCaps = not allCaps
             elif textureSearching:
                 if event.key == K_BACKSPACE:
                     backspacing = True
                     if len(textureSearchPath) > 0:
                         textureSearchPath = textureSearchPath[:len(textureSearchPath)-1]
-                elif event.key == K_LSHIFT or event.key == K_RSHIFT:
-                    shiftCaps = True
-                elif event.key == K_CAPSLOCK:
-                    allCaps = not allCaps
                 else:
                     #if both shitft and caps are on, the text turns small again
                     try:
@@ -448,10 +458,6 @@ while True:
                     backspacing = True
                     if len(mapSearchPath) > 0:
                         mapSearchPath = mapSearchPath[:len(mapSearchPath)-1]
-                elif event.key == K_LSHIFT or event.key == K_RSHIFT:
-                    shiftCaps = True
-                elif event.key == K_CAPSLOCK:
-                    allCaps = not allCaps
                 else:
                     #if both shitft and caps are on, the text turns small again
                     try:
@@ -468,5 +474,5 @@ while True:
                     shiftCaps = False
 
     #update window ----------------------------------------------------------- #
-    screen.blit(pygame.transform.scale(gui, (screen.get_width(), screen.get_height())), (0 ,0))
+    screen.blit(pygame.transform.scale(gui, (screen.get_width(), screen.get_height())), (0,0))
     pygame.display.flip()

@@ -13,17 +13,20 @@ def loadTextures(tileSheetPath, colorkey=None):
                     xStop, yStop = 0, 0
                     for x in range(j, tileSheet.get_width()):
                         if xStop == 0:
-                            if tileSheet.get_at((x, i)) == (0, 255, 0, 255): xStop = x
+                            if tileSheet.get_at((x, i)) == (0, 255, 0, 255): 
+                                xStop = x
                     for y in range(i, tileSheet.get_height()):
                         if yStop == 0:
-                            if tileSheet.get_at((xStop, y)) == (255, 0, 0, 255): yStop = y
+                            if tileSheet.get_at((xStop, y)) == (255, 0, 0, 255): 
+                                yStop = y
                     tile = pygame.Surface((xStop - (j + 1), yStop - i))
                     tile.blit(tileSheet, (0, 0), (j + 1, i, xStop - j, yStop - i))
                     if colorkey != None:
                         tile.set_colorkey(colorkey)
                     tiles.append(tile)
         return tiles
-    except:
+    except Exception as e:
+        print(e)
         return None
 
 def loadTextureTypes(tileSheetPath, types, colorkey=None):
@@ -54,7 +57,8 @@ def loadTextureTypes(tileSheetPath, types, colorkey=None):
                         tile.set_colorkey(colorkey)
                     tiles[types[typeIndex - 1]].append(tile)
         return tiles
-    except:
+    except Exception as e:
+        print(e)
         return None
 
 def reverseTextures(textures):
