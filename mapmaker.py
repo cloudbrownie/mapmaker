@@ -42,9 +42,9 @@ class TileArea(Screen):
             self.gridSurfaces[surf].set_colorkey((0, 0, 0))
             if surf != 'off':
                 curSize = int(surf.split('x')[0])
-                for i in range(resolution[0] // curSize):
+                for i in range(math.ceil(resolution[0] / curSize)):
                     pygame.draw.line(self.gridSurfaces[surf], (74, 71, 67), (curSize * i, 0), (curSize * i, resolution[1]), 1)
-                for i in range(resolution[1] // curSize):
+                for i in range(math.ceil(resolution[1] / curSize)):
                     pygame.draw.line(self.gridSurfaces[surf], (74, 71, 67), (0, curSize * i), (resolution[0], curSize * i), 1)
         self.gridSurface = self.gridSurfaces['off']
         self.width = resolution[0]
@@ -55,10 +55,10 @@ class TileArea(Screen):
 
     def draw(self, surf, tiles):
         self.background.fill(self.color)
+        self.background.blit(self.gridSurface, (0, 0))
         for tile in tiles:
             self.background.blit(tile.surface, tile.rect)
-        surf.blit(pygame.transform.scale(self.background, self.rect.size), self.rect)
-        surf.blit(pygame.transform.scale(self.gridSurface, self.rect.size), self.rect)
+        surf.blit(self.background, (0, 0))
 
     def changeGrid(self, newSize):
         self.gridSurface = self.gridSurfaces[newSize]
@@ -81,12 +81,15 @@ class Sidebar(Screen):
         self.tabs = 'Menu', 'Options'
         self.tabRects = pygame.Rect(0, 0, 125, 50), pygame.Rect(125, 0, 125, 50)
         self.selected = self.tabs[0]
+        self.separators = []
 
     def draw(self, surf):
         self.surface.fill(self.color)
         if self.selected == self.tabs[0]:
             pygame.draw.rect(self.surface, self.color, self.tabRects[0])
             pygame.draw.rect(self.surface, (54, 51, 47), self.tabRects[1])
+            for separator in self.separators:
+                pygame.draw.line(self.surface, (54, 51, 47), separator[0], separator[1], 2)
         elif self.selected == self.tabs[1]:
             pygame.draw.rect(self.surface, self.color, self.tabRects[1])
             pygame.draw.rect(self.surface, (54, 51, 47), self.tabRects[0])
@@ -94,6 +97,12 @@ class Sidebar(Screen):
         font.render(self.surface, 'Menu', (63 - font.size('Menu', scale=3)[0] // 2, font.size('Menu', scale=3)[1] // 2), scale=3)
         font.render(self.surface, 'Options', (188 - font.size('Options', scale=3)[0] // 2, font.size('Options', scale=3)[1] // 2), scale=3)
         surf.blit(pygame.transform.scale(self.surface, self.rect.size), self.rect)
+
+    def createSeparator(self, y):
+        self.separators.append(((5, y), (self.rect.w - 5, y)))
+
+    def clearSeparators(self):
+        self.separators = []
 
 #grid toggle button, with different sizes
 class GridButton(Button):
@@ -143,7 +152,7 @@ class TextureTile:
     def __init__(self, coords, surface):
         self.x = coords[0]
         self.y = coords[1]
-        self.size = (surface.get_width()*2, surface.get_height()*2)
+        self.size = (surface.get_width(), surface.get_height())
         self.rect = pygame.Rect((self.x, self.y), self.size)
         self.textureRect = pygame.Rect((self.x, self.y), (surface.get_size()))
         self.origSurface = pygame.Surface(surface.get_size())
@@ -168,9 +177,19 @@ class CurrentTexture:
         self.surface.blit(tempSurf, (0, 0))
         surf.blit(self.surface, self.rect)
 
-    def update(self, surf, mousepos):
-        self.rect.center = mousepos
+    def rotateSurface(self, direction):
+        if direction == K_q:
+            self.surface.blit(pygame.transform.rotate(self.surface, 90.0), (0,0))
+        else:
+            self.surface.blit(pygame.transform.rotate(self.surface, -90.0), (0,0))
+
+    def update(self, surf, mousepos, scales):
+        self.rect.centerx = mousepos[0] / scales[0]
+        self.rect.centery = mousepos[1] / scales[1]
         self.draw(surf)
+
+    def show(self, surf):
+        surf.blit(pygame.transform.scale(self.surface, (100, 100)), (75, 250))
 
 #drawn tile to the screen
 class DrawnTile:
@@ -226,7 +245,6 @@ def saveMap(currentTiles):
 
 #load up a map to display on the screen
 def loadMap(path):
-    global gui
     try:
         with open(path, 'r') as readFile:
             data = json.load(readFile)
@@ -246,7 +264,8 @@ def cleanUp(tiles, newTile):
     tiles.append(newTile)
 
 #window init ----------------------------------------------------------------- #
-screen = pygame.display.set_mode(size=(1750, 1000))
+pygame.init()
+screen = pygame.display.set_mode(size=(1920, 1050))
 pygame.display.set_caption('Tile Map Maker')
 
 #setup ----------------------------------------------------------------------- #
@@ -271,7 +290,8 @@ shiftCaps = False
 allCaps = False
 searchRenderOffset = 5
 
-tilearea = TileArea((250, 0), (1500, 1000), (37, 36, 34), (720, 480))
+res = (1080, 720)
+tilearea = TileArea((250, 0), (1500, 1000), (37, 36, 34), (2880, 1920))
 
 #mouse settings
 xRatio = screen.get_width() / gui.get_width()
@@ -302,6 +322,12 @@ time.sleep(.00001)
 
 #building vars
 placedTiles = []
+mapDrag = False
+dragOrig = (0, 0)
+placing = False
+removing = False
+cameraRect = pygame.Rect((0, 0), res)
+buildSurface = pygame.Surface(tilearea.background.get_size())
 
 #loop ------------------------------------------------------------------------ #
 while True:
@@ -312,7 +338,22 @@ while True:
 
     #update elements --------------------------------------------------------- #
     gui.fill((0, 0, 0))
-    tilearea.draw(gui, placedTiles)
+    tilearea.draw(buildSurface, placedTiles)
+    #cut out camera surface from build surface
+    if mapDrag and pygame.mouse.get_pressed()[0]:
+        xOff, yOff = pygame.mouse.get_rel()
+        cameraRect.x -= xOff / (tilearea.rect.w / cameraRect.w)
+        cameraRect.y -= yOff / (tilearea.rect.h / cameraRect.h)
+    cameraRect.w = min(cameraRect.w, res[0])
+    cameraRect.h = min(cameraRect.h, res[1])
+    cameraRect.top = max(cameraRect.top, 0)
+    cameraRect.bottom = min(cameraRect.bottom, buildSurface.get_height())
+    cameraRect.left = max(cameraRect.left, 0)
+    cameraRect.right = min(cameraRect.right, buildSurface.get_width())
+    cameraSurface = buildSurface.subsurface(cameraRect)
+    #stretch camera surface to match build area size
+    gui.blit(pygame.transform.scale(cameraSurface, (1500, 1000)), (250, 0))
+
     sidebar.draw(gui)
     if textureMenu:
         #i can hold backspace an it'll start deleting everything after a certain period
@@ -331,6 +372,11 @@ while True:
         font.render(gui, renderedSearch, (sidebar.searchBar.midleft[0] + searchRenderOffset, sidebar.searchBar.midleft[1] - 10), scale=2)
         for texture in loadedTextures:
             gui.blit(texture.surface, texture.rect)
+        #display the texture currently held
+        font.render(gui, 'Current Texture', (sidebar.rect.w // 2 - font.size('Current Texture', scale=3)[0] // 2, 205), scale=3)
+        if currentTexture:
+            currentTexture.show(gui)
+
     elif buttonMenu:
         #i can hold backspace an it'll start deleting everything after a certain period
         if backspacing and mapSearchPath != '':
@@ -350,22 +396,45 @@ while True:
         clearButton.draw(gui)
     loadButton.draw(gui)
     if currentTexture:
-        currentTexture.update(gui, pygame.mouse.get_pos())
+        currentTexture.update(gui, pygame.mouse.get_pos(), (xRatio, yRatio))
+
+    mx, my = pygame.mouse.get_pos()
+    mousepos = mx / xRatio, my / yRatio
+    if placing:
+        mousepos = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
+        newTile = DrawnTile((mousepos[0] - mousepos[0] % tilearea.getCurSize(), mousepos[1] - mousepos[1] % tilearea.getCurSize()), (currentTexture.surface))
+        cleanUp(placedTiles, newTile)
+    elif removing:
+        mousepos = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
+        for tile in placedTiles:
+            if tile.rect.collidepoint(mousepos):
+                placedTiles.remove(tile)
+                break
 
     #handle events ----------------------------------------------------------- #
     for event in pygame.event.get():
         if event.type == QUIT:
             pygame.quit()
             sys.exit()
+            if len(placedTiles) > 10:
+                saveMap(placedTiles)
+        elif event.type == MOUSEWHEEL:
+            if tilearea.rect.collidepoint(mousepos):
+                wMult = 75 * (res[0] / cameraRect.w)
+                hMult = 50 * (res[1] / cameraRect.h)
+                if cameraRect.w - event.y * wMult > 0 and cameraRect.h - event.y * hMult > 0:
+                    cameraRect.w -= event.y * wMult
+                    cameraRect.h -= event.y * hMult
+                    cameraRect.center = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
         elif event.type == MOUSEBUTTONDOWN:
-            mx, my = pygame.mouse.get_pos()
-            mousepos = mx / xRatio, my / yRatio
             if event.button == 1:
-                #check if a tile was clicked and draw there
-                if tilearea.rect.collidepoint(mousepos) and currentTexture:
-                    mousepos = (mousepos[0] - tilearea.rect.x) / tilearea.xScale, mousepos[1] / tilearea.yScale
-                    newTile = DrawnTile(((mousepos[0] // tilearea.getCurSize()) * tilearea.getCurSize(), (mousepos[1] // tilearea.getCurSize()) * tilearea.getCurSize()), (currentTexture.surface))
-                    cleanUp(placedTiles, newTile)
+                #draw at a position in the grid
+                if tilearea.rect.collidepoint(mousepos):
+                    if not mapDrag and currentTexture:
+                        placing = True
+                        removing = False
+                    elif mapDrag:
+                        dragOrig = pygame.mouse.get_rel()
                 elif sidebar.rect.collidepoint(mousepos):
                     if sidebar.tabRects[0].collidepoint(mousepos):
                         textureMenu = True
@@ -386,9 +455,23 @@ while True:
                         else:
                             textures = loadTextures(textureSearchPath, colorkey=(0, 0, 0))
                             if textures:
+                                sidebar.clearSeparators()
                                 loadedTextures = []
-                                for i in range(len(textures)):
-                                    loadedTextures.append(TextureTile((20, 205 + 65 * i), textures[i]))
+                                sidebar.createSeparator(375)
+                                y = 379
+                                for row in textures: # each row
+                                    if len(row) > 0:
+                                        x = 10
+                                        height = []
+                                        for texture in row: # each texture in row
+                                            if x >= sidebar.rect.w - texture.get_width():
+                                                x = 10
+                                                y += max(height) + 8
+                                            loadedTextures.append(TextureTile((x, y), texture))
+                                            x += texture.get_width() + 4
+                                            height.append(texture.get_height())
+                                        y += max(height) + 8
+                                        sidebar.createSeparator(y - 4)
                     if textureMenu:
                         if sidebar.searchBar.collidepoint(mousepos):
                             textureSearching = True
@@ -410,20 +493,27 @@ while True:
             elif event.button == 3:
                 currentTexture = None
                 if tilearea.rect.collidepoint(mousepos):
-                    mousepos = (mousepos[0] - tilearea.rect.x) / tilearea.xScale, mousepos[1] / tilearea.yScale
-                    for tile in placedTiles:
-                        if tile.rect.collidepoint(mousepos):
-                            placedTiles.remove(tile)
-                            break
+                    removing = True
+                    placing = False
             elif event.button == 2:
                 if tilearea.rect.collidepoint(mousepos):
-                    mousepos = (mousepos[0] - tilearea.rect.x) / tilearea.xScale, mousepos[1] / tilearea.yScale
+                    mousepos = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
                     for tile in placedTiles:
                         if tile.rect.collidepoint(mousepos):
-                            currentTexture = tile.surface.copy()
-                            currentRect = loadedTextures[0].rect.copy()
+                            currentTexture = CurrentTexture(tile.surface)
+        elif event.type == MOUSEBUTTONUP:
+            if event.button == 1:
+                placing = False
+            elif event.button == 3:
+                removing = False
         elif event.type == KEYDOWN:
-            if event.key == K_RETURN:
+            if (event.key == K_q or event.key == K_e) and currentTexture:
+                currentTexture.rotateSurface(event.key)
+            elif event.key == K_LCTRL:
+                mapDrag = True
+            elif event.key == K_ESCAPE:
+                currentTexture = None
+            elif event.key == K_RETURN:
                 textureSearching = False
                 mapSearching = False
                 if buttonMenu:
@@ -433,10 +523,23 @@ while True:
                 else:
                     textures = loadTextures(textureSearchPath, colorkey=(0, 0, 0))
                     if textures:
+                        sidebar.clearSeparators()
                         loadedTextures = []
-                        for i in range(len(textures)):
-                            loadedTextures.append(TextureTile((20, 205 + 65 * i), textures[i]))
-            elif event.key == K_LSHIFT or event.key == K_RSHIFT:
+                        sidebar.createSeparator(375)
+                        y = 379
+                        for row in textures: # each row
+                            if len(row) > 0:
+                                x = 10
+                                height = []
+                                for texture in row: # each texture in row
+                                    if x >= sidebar.rect.w - texture.get_width():
+                                        x = 10
+                                        y += max(height) + 8
+                                    loadedTextures.append(TextureTile((x, y), texture))
+                                    x += texture.get_width() + 4
+                                    height.append(texture.get_height())
+                                y += max(height) + 8
+                                sidebar.createSeparator(y - 4)
                 shiftCaps = True
             elif event.key == K_CAPSLOCK:
                 allCaps = not allCaps
@@ -467,6 +570,8 @@ while True:
                             mapSearchPath += chr(event.key)
                     except: pass #invalid characters
         elif event.type == KEYUP:
+            if mapDrag:
+                mapDrag = False
             if textureSearching or mapSearching:
                 if event.key == K_BACKSPACE:
                     backspacing = False
