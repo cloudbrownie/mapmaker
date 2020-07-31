@@ -53,11 +53,13 @@ class TileArea(Screen):
         self.yScale = size[1] / resolution[1]
         self.curSize = 1
 
-    def draw(self, surf, tiles):
+    def draw(self, surf, layers):
         self.background.fill(self.color)
         self.background.blit(self.gridSurface, (0, 0))
-        for tile in tiles:
-            self.background.blit(tile.surface, tile.rect)
+        for layer in layers:
+            if layers[layer].show:
+                for tile in layers[layer].tiles:
+                    self.background.blit(tile.surface, tile.rect)
         surf.blit(self.background, (0, 0))
 
     def changeGrid(self, newSize):
@@ -113,8 +115,8 @@ class GridButton(Button):
         for ele in self.sizes:
             self.surfaces[ele] = pygame.Surface(size)
             self.surfaces[ele].fill(color)
-            textSize = font.size(ele, scale=3)
-            font.render(self.surfaces[ele], ele, (self.width // 2 - textSize[0] // 2, 15), scale=3)
+            textSize = font.size(ele, scale=2)
+            font.render(self.surfaces[ele], ele, (self.width // 2 - textSize[0] // 2, 7), scale=2)
         self.surface = self.surfaces['off']
         self.index = 0
 
@@ -130,22 +132,28 @@ class GridButton(Button):
 class SaveButton(Button):
     def __init__(self, topLeft, size, color, font):
         super().__init__(topLeft, size, color)
-        textSize = font.size('Save', scale=3)
-        font.render(self.surface, 'Save', (self.width // 2 - textSize[0] // 2, 15), scale=3)
+        textSize = font.size('Save', scale=2)
+        font.render(self.surface, 'Save', (self.width // 2 - textSize[0] // 2, 7), scale=2)
 
 #clear button
 class ClearButton(Button):
     def __init__(self, topLeft, size, color, font):
         super().__init__(topLeft, size, color)
-        textSize = font.size('Clear', scale=3)
-        font.render(self.surface, 'Clear', (self.width // 2 - textSize[0] // 2, 15), scale=3)
+        textSize = font.size('Clear', scale=2)
+        font.render(self.surface, 'Clear', (self.width // 2 - textSize[0] // 2, 7), scale=2)
+
+class ClearAllButton(Button):
+    def __init__(self, topLeft, size, color, font):
+        super().__init__(topLeft, size, color)
+        textSize = font.size('Clear All', scale=2)
+        font.render(self.surface, 'Clear All', (self.width // 2 - textSize[0] // 2, 7), scale=2)
 
 #load map button
 class LoadButton(Button):
     def __init__(self, topLeft, size, color, font):
         super().__init__(topLeft, size, color)
-        textSize = font.size('Load', scale=3)
-        font.render(self.surface, 'Load', (self.width // 2 - textSize[0] // 2, 15), scale=3)
+        textSize = font.size('Load', scale=2)
+        font.render(self.surface, 'Load', (self.width // 2 - textSize[0] // 2, 7), scale=2)
 
 #texture tile in sidebar that shows the current loaded textures
 class TextureTile:
@@ -189,7 +197,7 @@ class CurrentTexture:
         self.draw(surf)
 
     def show(self, surf):
-        surf.blit(pygame.transform.scale(self.surface, (100, 100)), (75, 250))
+        surf.blit(pygame.transform.scale(self.surface, (100, 100)), (75, 225))
 
 #drawn tile to the screen
 class DrawnTile:
@@ -207,6 +215,61 @@ class DrawnTile:
         self.surface.blit(tempSurf, (0, 0))
         surf.blit(self.surface, self.rect)
 
+#layer container
+class BuildLayer:
+    def __init__(self, layerNum, font):
+        #interactable vars
+        self.id = layerNum
+        self.tiles = []
+        self.show = True
+        self.current = False
+        self.icon = pygame.Surface((100, 20))
+        self.curIcon = pygame.Surface((100, 20))
+        self.rect = pygame.Rect(0, 0, 100, 20)
+        self.icon.fill((47, 46, 44))
+        self.curIcon.fill((37, 36, 34))
+        self.color = (47, 46, 44)
+        self.font = font
+        self.renderId(f'Layer {self.id}')
+        self.activeRect = pygame.Rect(0, 0, 20, 20)
+        self.typeRect = pygame.Rect(0, 0, 20, 20)
+        #layer quality vars
+        self.types = ['solid', 'platform', 'decoration']
+        self.typeColors = [(0, 255, 0), (255, 255, 0), (255, 0, 0)]
+        self.index = 0
+        self.type = self.types[self.index]
+
+    def renderId(self, id):
+        self.icon.fill(self.color)
+        self.font.render(self.icon, id, (self.rect.w // 2 - self.font.size(id)[0] // 2, self.rect.h // 2 - self.font.size(id)[1] // 2))
+        self.curIcon.fill((37, 36, 34))
+        self.font.render(self.curIcon, id, (self.rect.w // 2 - self.font.size(id)[0] // 2, self.rect.h // 2 - self.font.size(id)[1] // 2))
+
+    def reposition(self, centerloc):
+        self.rect.center = centerloc
+        self.activeRect.center = centerloc[0] - 65, centerloc[1]
+        self.typeRect.center = centerloc[0] + 65, centerloc[1]
+
+    def cycleType(self):
+        self.index += 1
+        self.index %= len(self.types)
+        self.type = self.types[self.index]
+
+    def setType(self, type):
+        self.index = self.types.index(type)
+        self.type = self.types[self.index]
+
+    def drawIcon(self, surf):
+        if self.current:
+            surf.blit(self.curIcon, self.rect)
+        else:
+            surf.blit(self.icon, self.rect)
+        pygame.draw.rect(surf, self.color, self.activeRect)
+        if self.show:
+            pygame.draw.rect(surf, (255, 255, 255), (self.rect.x - 22, self.rect.y + 3, self.rect.h - 6, self.rect.h - 6))
+        pygame.draw.rect(surf, self.color, self.typeRect)
+        pygame.draw.rect(surf, self.typeColors[self.index], (self.typeRect.x + 3, self.rect.y + 3, self.rect.h - 6, self.rect.h - 6))
+
 #general functions ----------------------------------------------------------- #
 def saveMap(currentTiles):
     """
@@ -214,24 +277,25 @@ def saveMap(currentTiles):
     and size to a dictionary. also saves each unique surface to the dictionary as well.
     then saves the dictionary to a json file. the unique surfaces are saved as endocded byte strings.
     """
-    data = {}
-    tiles = [x for x in currentTiles]
-    #save all unique surfaces as a string
-    uniqueSurfaces = []
-    [uniqueSurfaces.append(pygame.image.tostring(tile.surface, 'RGB')) for tile in tiles if pygame.image.tostring(tile.surface, 'RGB') not in uniqueSurfaces]
-    #give each tile an id corresponding to its surfaces in the surface list
-    for tile in tiles:
-        tile.surfID = uniqueSurfaces.index(pygame.image.tostring(tile.surface, 'RGB'))
-    #put the surfaces into the data dict
-    savedSurfaces = []
+
+
+    data = {'Layers':[], 'Surfaces':[]}
+    surfaces = []
+    for layer in layers:
+        #save all unique surfaces to a string
+        [surfaces.append(pygame.image.tostring(tile.surface, 'RGB')) for tile in layers[layer].tiles if pygame.image.tostring(tile.surface, 'RGB') not in surfaces]
+        #give all tiles their surface id
+        for tile in layers[layer].tiles:
+            tile.surfID = surfaces.index(pygame.image.tostring(tile.surface, 'RGB'))
+        #save all tiles as a dict
+        layerRects = []
+        [layerRects.append({'SurfID':tile.surfID, 'Coords':tile.rect.topleft, 'Size':tile.rect.size, 'Type':layers[layer].type}) for tile in layers[layer].tiles]
+        data['Layers'].append(layerRects)
     #json doesnt like converting byte objects, so we encode to ascii, which means when we try to load this byte obj later, we need to decode
-    [savedSurfaces.append(base64.b64encode(surf).decode('ascii')) for surf in uniqueSurfaces]
-    #put all the tile objs into the data dict
-    savedTiles = []
-    [savedTiles.append({'SurfID':tile.surfID, 'Coords':tile.rect.topleft, 'Size':tile.rect.size}) for tile in tiles]
-    #write to a json file in output
-    data['Surfaces'] = savedSurfaces
-    data['Tiles'] = savedTiles
+    for i in range(len(surfaces)):
+        surfaces[i] = base64.b64encode(surfaces[i]).decode('ascii')
+    #save the surfaces
+    data['Surfaces'] = surfaces
     timeString = time.ctime(time.time())
     timeString = timeString[-16:]
     timeString = list(timeString)
@@ -246,13 +310,20 @@ def saveMap(currentTiles):
 #load up a map to display on the screen
 def loadMap(path):
     try:
+        #load the map from the json given the path
         with open(path, 'r') as readFile:
             data = json.load(readFile)
-        tiles = []
-        for tile in data['Tiles']:
-            surface = pygame.image.fromstring(base64.b64decode(data['Surfaces'][tile['SurfID']]), tile['Size'], 'RGB')
-            tiles.append(DrawnTile(tile['Coords'], surface.copy()))
-        return tiles
+        #layers are stored in dict
+        layers = {}
+        for i in range(len(data['Layers'])): #this iterates through every layer
+            type = data['Layers'][i][0]['Type'] #this grabs the type of the first tile in the current layer
+            newLayer = BuildLayer(i, font) #this creates a build layer object for the current layer
+            newLayer.setType(type)
+            for tile in data['Layers'][i]: #this iterates through every tile in the current layer
+                surface = pygame.image.fromstring(base64.b64decode(data['Surfaces'][tile['SurfID']]), tile['Size'], 'RGB') #creates a surface using the current tile's info
+                newLayer.tiles.append(DrawnTile(tile['Coords'], surface.copy())) #creates a new tile obj with the current tile's info and surface
+            layers[i] = newLayer #adds the new layer to the layers dict
+        return layers
     except Exception as e:
         print(e)
 
@@ -299,19 +370,20 @@ yRatio = screen.get_height() / gui.get_height()
 currentTexture = None
 
 #load button used to load a map from a json
-loadButton = LoadButton((25, 140), (200, 50), (37, 36, 34), font)
+loadButton = LoadButton((35, 140), (180, 30), (37, 36, 34), font)
 
 #button used to swap grid sizes
-sizeButton = GridButton((25, 205), (200, 50), (37, 36, 34), font)
+sizeButton = GridButton((35, 185), (180, 30), (37, 36, 34), font)
 gridStyle = sizeButton.getStatus()
 tiles = []
 size = None
 
 #save button used to save the current map
-saveButton = SaveButton((25, 270), (200, 50), (37, 36, 34), font)
+saveButton = SaveButton((35, 230), (180, 30), (37, 36, 34), font)
 
 #clear button to clear the buildign area
-clearButton = ClearButton((25, 335), (200, 50), (37, 36, 34), font)
+clearButton = ClearButton((35, 275), (180, 30), (37, 36, 34), font)
+clearAllButton = ClearAllButton((35, 320), (180, 30), (37, 36, 34), font)
 
 #loading textures settings
 loadedTextures = []
@@ -321,7 +393,9 @@ prevTime = time.time()
 time.sleep(.00001)
 
 #building vars
-placedTiles = []
+layers = {0:BuildLayer(0, font)}
+layers[0].reposition((125, 365))
+layerIndex = 0
 mapDrag = False
 dragOrig = (0, 0)
 placing = False
@@ -338,12 +412,13 @@ while True:
 
     #update elements --------------------------------------------------------- #
     gui.fill((0, 0, 0))
-    tilearea.draw(buildSurface, placedTiles)
+    tilearea.draw(buildSurface, layers)
     #cut out camera surface from build surface
     if mapDrag and pygame.mouse.get_pressed()[0]:
         xOff, yOff = pygame.mouse.get_rel()
         cameraRect.x -= xOff / (tilearea.rect.w / cameraRect.w)
         cameraRect.y -= yOff / (tilearea.rect.h / cameraRect.h)
+    #this makes sure that the canera is within range of the build surface
     cameraRect.w = min(cameraRect.w, res[0])
     cameraRect.h = min(cameraRect.h, res[1])
     cameraRect.top = max(cameraRect.top, 0)
@@ -373,7 +448,7 @@ while True:
         for texture in loadedTextures:
             gui.blit(texture.surface, texture.rect)
         #display the texture currently held
-        font.render(gui, 'Current Texture', (sidebar.rect.w // 2 - font.size('Current Texture', scale=3)[0] // 2, 205), scale=3)
+        font.render(gui, 'Current Texture', (sidebar.rect.w // 2 - font.size('Current Texture', scale=2.5)[0] // 2, 190), scale=2.5)
         if currentTexture:
             currentTexture.show(gui)
 
@@ -394,6 +469,9 @@ while True:
         sizeButton.draw(gui)
         saveButton.draw(gui)
         clearButton.draw(gui)
+        clearAllButton.draw(gui)
+        for layer in layers:
+            layers[layer].drawIcon(gui)
     loadButton.draw(gui)
     if currentTexture:
         currentTexture.update(gui, pygame.mouse.get_pos(), (xRatio, yRatio))
@@ -401,14 +479,19 @@ while True:
     mx, my = pygame.mouse.get_pos()
     mousepos = mx / xRatio, my / yRatio
     if placing:
+        #drag drawing
         mousepos = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
-        newTile = DrawnTile((mousepos[0] - mousepos[0] % tilearea.getCurSize(), mousepos[1] - mousepos[1] % tilearea.getCurSize()), (currentTexture.surface))
-        cleanUp(placedTiles, newTile)
+        if tilearea.getCurSize() > 1:
+            newTile = DrawnTile((mousepos[0] - mousepos[0] % tilearea.getCurSize(), mousepos[1] - mousepos[1] % tilearea.getCurSize()), currentTexture.surface)
+        else:
+            newTile = DrawnTile((mousepos[0] - currentTexture.surface.get_width() // 2, mousepos[1] - currentTexture.surface.get_height() // 2), currentTexture.surface)
+        cleanUp(layers[layerIndex].tiles, newTile)
     elif removing:
+        #drag deleting
         mousepos = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
-        for tile in placedTiles:
+        for tile in layers[layerIndex].tiles:
             if tile.rect.collidepoint(mousepos):
-                placedTiles.remove(tile)
+                layers[layerIndex].tiles.remove(tile)
                 break
 
     #handle events ----------------------------------------------------------- #
@@ -416,13 +499,11 @@ while True:
         if event.type == QUIT:
             pygame.quit()
             sys.exit()
-            if len(placedTiles) > 10:
-                saveMap(placedTiles)
         elif event.type == MOUSEWHEEL:
             if tilearea.rect.collidepoint(mousepos):
                 wMult = 75 * (res[0] / cameraRect.w)
                 hMult = 50 * (res[1] / cameraRect.h)
-                if cameraRect.w - event.y * wMult > 0 and cameraRect.h - event.y * hMult > 0:
+                if cameraRect.w - event.y * wMult > 0 and cameraRect.h - event.y * hMult > 0: #zoom the map based on zoom already
                     cameraRect.w -= event.y * wMult
                     cameraRect.h -= event.y * hMult
                     cameraRect.center = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
@@ -436,6 +517,7 @@ while True:
                     elif mapDrag:
                         dragOrig = pygame.mouse.get_rel()
                 elif sidebar.rect.collidepoint(mousepos):
+                    #swap sidebar tabs
                     if sidebar.tabRects[0].collidepoint(mousepos):
                         textureMenu = True
                         buttonMenu = False
@@ -445,20 +527,23 @@ while True:
                         buttonMenu = True
                         sidebar.selected = sidebar.tabs[1]
                         textureSearching = False
+                    #works with the searchbar
                     elif loadButton.rect.collidepoint(mousepos):
                         mapSearching = False
                         textureSearching = False
                         if buttonMenu:
                             loaded = (loadMap(mapSearchPath))
                             if loaded:
-                                placedTiles.extend(loaded)
+                                for layer in loaded:
+                                    layers[len(layers)] = loaded[layer]
+                                    layers[len(layers) - 1].reposition((125, 340 + 25 * len(layers)))
                         else:
                             textures = loadTextures(textureSearchPath, colorkey=(0, 0, 0))
                             if textures:
                                 sidebar.clearSeparators()
                                 loadedTextures = []
-                                sidebar.createSeparator(375)
-                                y = 379
+                                sidebar.createSeparator(340)
+                                y = 344
                                 for row in textures: # each row
                                     if len(row) > 0:
                                         x = 10
@@ -473,6 +558,7 @@ while True:
                                         y += max(height) + 8
                                         sidebar.createSeparator(y - 4)
                     if textureMenu:
+                        #buttons for the texture menu
                         if sidebar.searchBar.collidepoint(mousepos):
                             textureSearching = True
                         else:
@@ -480,6 +566,7 @@ while True:
                                 if texture.rect.collidepoint(mousepos):
                                     currentTexture = CurrentTexture(texture.origSurface)
                     elif buttonMenu:
+                        #buttons for the button menu
                         if sidebar.searchBar.collidepoint(mousepos):
                             mapSearching = True
                         elif sizeButton.rect.collidepoint(mousepos):
@@ -487,46 +574,83 @@ while True:
                             gridStyle = sizeButton.getStatus()
                             tilearea.changeGrid(gridStyle)
                         elif saveButton.rect.collidepoint(mousepos):
-                            saveMap(placedTiles)
+                            saveMap(layers)
                         elif clearButton.rect.collidepoint(mousepos):
-                            placedTiles = []
+                            layers[layerIndex].tiles = []
+                        elif clearAllButton.rect.collidepoint(mousepos):
+                            for layer in layers:
+                                layers[layer].tiles = []
+                        else:
+                            for layer in layers:
+                                if layers[layer].rect.collidepoint(mousepos):
+                                    layers[layerIndex].current = False
+                                    layerIndex = layers[layer].id
+                                    layers[layerIndex].current = True
+                                elif layers[layer].activeRect.collidepoint(mousepos):
+                                    layers[layer].show = not layers[layer].show
+                                elif layers[layer].typeRect.collidepoint(mousepos):
+                                    layers[layer].cycleType()
             elif event.button == 3:
+                #for deleting
                 currentTexture = None
                 if tilearea.rect.collidepoint(mousepos):
                     removing = True
                     placing = False
             elif event.button == 2:
+                #if you're hovering over a placed tile, make the current texture to that tile
                 if tilearea.rect.collidepoint(mousepos):
                     mousepos = cameraRect.x + ((mousepos[0] - tilearea.rect.x) / (tilearea.rect.w / cameraRect.w)), cameraRect.y + (mousepos[1] / (tilearea.rect.h / cameraRect.h))
-                    for tile in placedTiles:
+                    for tile in layers[layerIndex].tiles:
                         if tile.rect.collidepoint(mousepos):
                             currentTexture = CurrentTexture(tile.surface)
         elif event.type == MOUSEBUTTONUP:
+            #stop buildign or removing
             if event.button == 1:
                 placing = False
             elif event.button == 3:
                 removing = False
         elif event.type == KEYDOWN:
-            if (event.key == K_q or event.key == K_e) and currentTexture:
-                currentTexture.rotateSurface(event.key)
-            elif event.key == K_LCTRL:
+            if not textureSearching and not mapSearching:
+                #rotate the current texture
+                if (event.key == K_q or event.key == K_e) and currentTexture:
+                    currentTexture.rotateSurface(event.key)
+                #change layers
+                elif event.key == K_w:
+                    if layerIndex - 1 > -1:
+                        layers[layerIndex].current = False
+                        layerIndex -= 1
+                        layers[layerIndex].current = True
+                elif event.key == K_s:
+                    if layerIndex + 1 < 26:
+                        layers[layerIndex].current = False
+                        layerIndex += 1
+                        if layerIndex not in layers:
+                            layers[layerIndex] = BuildLayer(layerIndex, font)
+                            layers[len(layers) - 1].reposition((125, 340 + 25 * len(layers)))
+                        layers[layerIndex].current = True
+            #map dragging
+            if event.key == K_LCTRL:
                 mapDrag = True
+            #get rid of the current tile
             elif event.key == K_ESCAPE:
                 currentTexture = None
+            #enter key
             elif event.key == K_RETURN:
                 textureSearching = False
                 mapSearching = False
                 if buttonMenu:
                     loaded = (loadMap(mapSearchPath))
                     if loaded:
-                        placedTiles.extend(loaded)
+                        for layer in loaded:
+                            layers[len(layers)] = loaded[layer]
+                            layers[len(layers) - 1].reposition((125, 340 + 25 * len(layers)))
                 else:
                     textures = loadTextures(textureSearchPath, colorkey=(0, 0, 0))
                     if textures:
                         sidebar.clearSeparators()
                         loadedTextures = []
-                        sidebar.createSeparator(375)
-                        y = 379
+                        sidebar.createSeparator(340)
+                        y = 344
                         for row in textures: # each row
                             if len(row) > 0:
                                 x = 10
@@ -541,8 +665,10 @@ while True:
                                 y += max(height) + 8
                                 sidebar.createSeparator(y - 4)
                 shiftCaps = True
+            #caps
             elif event.key == K_CAPSLOCK:
                 allCaps = not allCaps
+            #next two ifs are for the search bar
             elif textureSearching:
                 if event.key == K_BACKSPACE:
                     backspacing = True
